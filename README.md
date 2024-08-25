@@ -14,6 +14,10 @@
 - s3에 저장된 Json파일을 Genimi API로 보내 요약 정리된 후 Slack webHook API 호출하는 람다
 - aws s3 Put이벤트 발생 시 실행
 - aws ECR로 환경설정
+- 자세한 설명은 블로그 글 참고
+   -  <a href= ""> s3 트리거를 사용해 lambda 함수 호출 </a>
+   -  <a href= ""> gemini api 사용 </a>
+   -  <a href= ""> slack webhook 연동 </a>
 
 #### 각종 이슈 해결
 - <a href= "https://velog.io/@hyeykim/mac%EC%97%90%EC%84%9C-webdrivermanager%EB%A5%BC-%EC%82%AC%EC%9A%A9%ED%95%B4-chromedriver%EB%A5%BC-%EC%82%AC%EC%9A%A9%ED%95%98%EB%8A%94-%EC%A4%91-OSError-Errno-8-Exec-format-error-%ED%95%B4%EA%B2%B0">mac에서 webdriver_manager를 사용해 chromedriver를 사용하는 중 OSError: [Errno 8] Exec format error: 해결 </a>
