@@ -12,7 +12,7 @@
 - Chromium, ChromeDriver 1002910
 
 #### 크롤링 전체 아키텍쳐
-![크롤링 전체 아키텍쳐](https://cdn.discordapp.com/attachments/793022818757509131/1276880093188325388/2024-08-23_9.47.02.png?ex=66cb22c1&is=66c9d141&hm=d04c2ac33b726ac27998d64f9819e59a95ac2adec4a97b197a047278d5f18ba6&)
+<img width="1035" alt="스크린샷 2024-08-23 오후 9 47 02" src="https://github.com/user-attachments/assets/033711b9-dc8d-45e2-90aa-f6d64f073070">
 
 ### lambda-selenium-docker: 
 - 웹 사이트에서 글을 크롤링한 후 s3에 저장하는 람다
