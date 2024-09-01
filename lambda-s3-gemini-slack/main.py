@@ -1,32 +1,75 @@
 import google.generativeai as genai
 import json
 import os
+import re
 import requests
 import boto3
 from datetime import datetime, timedelta
 import pytz
 
-def send_llm(data):
+def parse_gpt_text(text):
+    # 각 제목과 내용을 추출하는 정규식
+    pattern = r"\*\*제목 \d+: (.*?)\*\*\n(.*?)(https?://[^\s]+)"
+    matches = re.findall(pattern, text, re.DOTALL)
+
+    summary_data = []
+    for match in matches:
+        title = match[0].strip()
+        content = match[1].strip()
+        url = match[2].strip()
+        
+        summary_data.append({
+            "title": title,
+            "content": content,
+            "url": url
+        })
+    
+    return summary_data
+
+def format_for_slack(summary_data):
+    attachments = []
+    for item in summary_data:
+        title = item.get("title", "")
+        content = item.get("content", "")
+        url = item.get("url", "")
+        
+        # 슬랙 메시지 형식으로 변환
+        attachment = {
+            "color": "#36a64f",  # 첨부 메시지의 색상 코드 (초록색)
+            "title": f"*{title}*",  # 제목을 굵게 표시
+            "text": f"{content}\n<{url}|원본 링크>",  # 내용과 링크를 함께 표시
+            "mrkdwn_in": ["text", "pretext"]  # 마크다운 적용
+        }
+        attachments.append(attachment)
+    
+    return attachments
+
+def send_llm(data, date):
 	genai.configure(api_key=os.environ['googleApiKey'])
 
 	try:
 		model = genai.GenerativeModel('gemini-1.5-flash')
-		response = model.generate_content(f"각 배열의 요소가 title과 content, url로 이루어진 딕셔너리 형태인 데이터를 넘겨주었을 때 주요 내용을 요약 정리해서 알려주고 각 타이틀에 맞는 원본 링크를 함께 첨부해줘 {data}")
-
-		text = response.text
+		response = model.generate_content(f"입력 값 형식: title과 content, url로 이루어진 딕셔너리 형태인 데이터. 입력 값: {data}. 가공 처리: 주요 내용 요약 정리 자잘한 이야기는 넘어가도 괜찮. 출력 값 형식: 주요 내용 제목 1:  제목 1 관련된 내용 [링크]")
+		summary_data = parse_gpt_text(response.text)
+		formatted_attachments = format_for_slack(summary_data)
+		
 		# Slack 웹훅에 전송할 데이터 구성
 		url = os.environ['webhook']
 		header = {'Content-type': 'application/json'}
 		icon_emoji = ":slack:"
 		username = "DC 웹소설 연재 갤러리"
-		attachments = [{
-			"color": "good",
-			"text": text  # 생성된 텍스트를 Slack으로 전송
-		}]
-		slack_data = {"username": username, "attachments": attachments, "icon_emoji": icon_emoji}
-		requests.post(url, headers=header, json=slack_data)
+
+		slack_data = {
+			"username": username,
+			"attachments": formatted_attachments,
+			"icon_emoji": icon_emoji
+		}
+
+		response = requests.post(url, headers=header, json=slack_data)
+		if response.status_code != 200:
+			raise Exception(f"Request to Slack returned an error {response.status_code}, the response is:\n{response.text}")
 	except Exception as e:
-		print(f"Error generating text: {e}")
+		print(f"Error sending message to Slack: {e}")
 
 def handler(event, context):
 	# S3 클라이언트 생성
@@ -41,38 +84,32 @@ def handler(event, context):
 	seoul_tz = pytz.timezone('Asia/Seoul')
 	now = datetime.now(seoul_tz)
 
-	# 1시간 전 시간 계산
-	one_hour_ago = now - timedelta(hours=1)
+	# 하루 전 시간 계산
+	previous_day = now - timedelta(days=1)
+	target_date = previous_day.strftime('%Y-%m-%d')
 
-	# 언더플로우 처리: 0시에서 1시간 전은 전날 23시로 설정
-	if one_hour_ago.hour == 23 and now.hour == 0:
-		target_date = (now - timedelta(days=1)).strftime('%Y-%m-%d')
-	else:
-		target_date = one_hour_ago.strftime('%Y-%m-%d')
+	# 하루 전 파일의 접두사(prefix) 설정
+	prefix = f'dc/{target_date}_'
+	response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
 
-	target_hour = one_hour_ago.strftime('%H')
+	json_data = []
+	
+	if 'Contents' in response:
+		for obj in response['Contents']:
+			file_key = obj['Key']
 
-	# 예상되는 파일 이름 생성 (예: "dc crawling_data_YYYY-MM-DD_HH.json")
-	expected_file_key = f'dc/{target_date}_{target_hour}.json'
-	# expected_file_key = "hello"
+			# 파일 내용 가져오기
+			file_obj = s3.get_object(Bucket=bucket_name, Key=file_key)
+			file_content = file_obj['Body'].read().decode('utf-8')
+			json_data.append(json.loads(file_content))
 
-	try:
-		# 예상된 파일 읽기
-		file_obj = s3.get_object(Bucket=bucket_name, Key=expected_file_key)
-		file_content = file_obj['Body'].read().decode('utf-8')
-		json_data = json.loads(file_content)
-		send_llm(json_data)
-		return {
-			'statusCode': 200,
-			'body': json.dumps(f"Processed file: {expected_file_key}")
-		}
+	# JSON 데이터 처리
+	send_llm(json_data, target_date)  # 이 부분은 데이터를 처리하는 함수라고 가정하고 있습니다.
 
-	except s3.exceptions.NoSuchKey:
-		# 파일이 존재하지 않을 때의 처리
-		return {
-			'statusCode': 404,
-			'body': json.dumps(f"No file found for {expected_file_key}")
-		}
+	return {
+		'statusCode': 200,
+		'body': json.dumps(f"Processed files: {target_date}")
+	}
 	
 if __name__ == '__main__':
     handler()
